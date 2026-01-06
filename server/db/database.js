@@ -31,6 +31,47 @@ db.pragma('foreign_keys = ON');
  * Khởi tạo các bảng trong database
  */
 export function initDatabase() {
+  // Bảng users - quản lý người dùng
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      display_name TEXT,
+      role TEXT DEFAULT 'user',
+      is_active INTEGER DEFAULT 1,
+      last_login DATETIME,
+      login_count INTEGER DEFAULT 0,
+      telegram_user_id TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Bảng sessions - theo dõi phiên đăng nhập
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token TEXT UNIQUE NOT NULL,
+      device_info TEXT,
+      ip_address TEXT,
+      expires_at DATETIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Tạo admin mặc định nếu chưa có
+  const adminExists = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');
+  if (!adminExists) {
+    db.prepare(`
+      INSERT INTO users (username, password, display_name, role)
+      VALUES ('admin', 'admin123', 'Administrator', 'admin')
+    `).run();
+    console.log('✅ Created default admin account: admin / admin123');
+  }
+
   // Bảng bills - lưu các bill từ khách
   db.exec(`
     CREATE TABLE IF NOT EXISTS bills (
@@ -283,6 +324,197 @@ export const ketQuaDb = {
       lo_2_so: JSON.parse(r.lo_2_so || '[]'),
       lo_3_so: JSON.parse(r.lo_3_so || '[]')
     }));
+  }
+};
+
+// ================================================================
+// CRUD Operations cho Users
+// ================================================================
+
+export const usersDb = {
+  /**
+   * Tạo user mới
+   */
+  create: (data) => {
+    const stmt = db.prepare(`
+      INSERT INTO users (username, password, display_name, role)
+      VALUES (@username, @password, @display_name, @role)
+    `);
+    try {
+      const result = stmt.run({
+        username: data.username,
+        password: data.password,
+        display_name: data.display_name || data.username,
+        role: data.role || 'user'
+      });
+      return { success: true, id: result.lastInsertRowid };
+    } catch (e) {
+      if (e.message.includes('UNIQUE')) {
+        return { success: false, error: 'Username đã tồn tại' };
+      }
+      throw e;
+    }
+  },
+
+  /**
+   * Đăng nhập
+   */
+  login: (username, password) => {
+    const stmt = db.prepare('SELECT * FROM users WHERE username = ? AND password = ? AND is_active = 1');
+    const user = stmt.get(username, password);
+    
+    if (user) {
+      // Update last login
+      db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP, login_count = login_count + 1 WHERE id = ?').run(user.id);
+      return { success: true, user: { ...user, password: undefined } };
+    }
+    return { success: false, error: 'Sai username hoặc password' };
+  },
+
+  /**
+   * Lấy user theo ID
+   */
+  getById: (id) => {
+    const stmt = db.prepare('SELECT id, username, display_name, role, is_active, last_login, login_count, created_at FROM users WHERE id = ?');
+    return stmt.get(id);
+  },
+
+  /**
+   * Lấy user theo username
+   */
+  getByUsername: (username) => {
+    const stmt = db.prepare('SELECT id, username, display_name, role, is_active, last_login, login_count, created_at FROM users WHERE username = ?');
+    return stmt.get(username);
+  },
+
+  /**
+   * Lấy tất cả users
+   */
+  getAll: () => {
+    const stmt = db.prepare('SELECT id, username, display_name, role, is_active, last_login, login_count, created_at FROM users ORDER BY created_at DESC');
+    return stmt.all();
+  },
+
+  /**
+   * Update user
+   */
+  update: (id, data) => {
+    const fields = [];
+    const values = {};
+    
+    if (data.password) {
+      fields.push('password = @password');
+      values.password = data.password;
+    }
+    if (data.display_name) {
+      fields.push('display_name = @display_name');
+      values.display_name = data.display_name;
+    }
+    if (typeof data.is_active !== 'undefined') {
+      fields.push('is_active = @is_active');
+      values.is_active = data.is_active ? 1 : 0;
+    }
+    if (data.role) {
+      fields.push('role = @role');
+      values.role = data.role;
+    }
+    
+    if (fields.length === 0) return { success: false, error: 'Không có gì để update' };
+    
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.id = id;
+    
+    const stmt = db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = @id`);
+    stmt.run(values);
+    return { success: true };
+  },
+
+  /**
+   * Xóa user
+   */
+  delete: (id) => {
+    // Không cho xóa admin
+    const user = db.prepare('SELECT role FROM users WHERE id = ?').get(id);
+    if (user?.role === 'admin') {
+      return { success: false, error: 'Không thể xóa tài khoản admin' };
+    }
+    
+    const stmt = db.prepare('DELETE FROM users WHERE id = ?');
+    stmt.run(id);
+    return { success: true };
+  },
+
+  /**
+   * Đếm số users
+   */
+  count: () => {
+    const stmt = db.prepare('SELECT COUNT(*) as count FROM users');
+    return stmt.get().count;
+  }
+};
+
+// ================================================================
+// Sessions Management
+// ================================================================
+
+export const sessionsDb = {
+  /**
+   * Tạo session mới
+   */
+  create: (userId, token, deviceInfo = '', ipAddress = '', expiresIn = 24 * 60 * 60 * 1000) => {
+    // Xóa sessions cũ của user này
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+    
+    const expiresAt = new Date(Date.now() + expiresIn).toISOString();
+    const stmt = db.prepare(`
+      INSERT INTO sessions (user_id, token, device_info, ip_address, expires_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    stmt.run(userId, token, deviceInfo, ipAddress, expiresAt);
+    return token;
+  },
+
+  /**
+   * Verify session token
+   */
+  verify: (token) => {
+    const stmt = db.prepare(`
+      SELECT s.*, u.username, u.display_name, u.role 
+      FROM sessions s 
+      JOIN users u ON s.user_id = u.id 
+      WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
+    `);
+    return stmt.get(token);
+  },
+
+  /**
+   * Xóa session (logout)
+   */
+  delete: (token) => {
+    const stmt = db.prepare('DELETE FROM sessions WHERE token = ?');
+    stmt.run(token);
+  },
+
+  /**
+   * Lấy tất cả sessions đang active
+   */
+  getActiveSessions: () => {
+    const stmt = db.prepare(`
+      SELECT s.*, u.username, u.display_name 
+      FROM sessions s 
+      JOIN users u ON s.user_id = u.id 
+      WHERE s.expires_at > datetime('now')
+      ORDER BY s.created_at DESC
+    `);
+    return stmt.all();
+  },
+
+  /**
+   * Xóa session của user
+   */
+  deleteByUserId: (userId) => {
+    const stmt = db.prepare('DELETE FROM sessions WHERE user_id = ?');
+    stmt.run(userId);
   }
 };
 

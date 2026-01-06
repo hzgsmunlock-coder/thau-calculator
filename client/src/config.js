@@ -2,17 +2,15 @@
  * ================================================================
  * APP CONFIG - Cấu hình ứng dụng
  * ================================================================
- * 
- * 🔐 ĐỔI MẬT KHẨU TẠI ĐÂY:
- * Chỉ cần sửa giá trị APP_PASSWORD bên dưới
- * Sau đó deploy lại là xong!
- * 
  */
 
 // ============================================================
-// 🔐 MẬT KHẨU ĐĂNG NHẬP - SỬA TẠI ĐÂY
+// 🌐 API URL - Backend server
 // ============================================================
-export const APP_PASSWORD = 'thau2024';
+const isDev = import.meta.env.DEV;
+export const API_URL = isDev 
+  ? 'http://localhost:3001' 
+  : 'https://ok-production-01c9.up.railway.app';
 
 // ============================================================
 // ⏰ THỜI GIAN SESSION (milliseconds)
@@ -23,4 +21,4 @@ export const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 giờ
 // 🎨 APP INFO
 // ============================================================
 export const APP_NAME = 'Thầu Calculator';
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '2.0.0';

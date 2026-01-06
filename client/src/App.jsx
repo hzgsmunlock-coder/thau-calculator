@@ -6,31 +6,40 @@ import ThongKePage from './components/ThongKePage'
 import CongThucPage from './components/CongThucPage'
 import TinhTienKhachPage from './components/TinhTienKhachPage'
 import LoginPage from './components/LoginPage'
+import AdminPanel from './components/AdminPanel'
 import { getTodayString, getDayOfWeek, LICH_XO_SO } from './utils/constants'
-import { APP_PASSWORD, SESSION_DURATION } from './config'
+import { API_URL, SESSION_DURATION } from './config'
 
-function checkAuth() {
-  const auth = localStorage.getItem('thau_auth');
-  const authTime = localStorage.getItem('thau_auth_time');
+// Check session with server
+async function checkAuth() {
+  const sessionToken = localStorage.getItem('thau_session');
+  const user = localStorage.getItem('thau_user');
   
-  if (!auth || !authTime) return false;
+  if (!sessionToken || !user) return { valid: false };
   
-  // Check session expiry
-  const elapsed = Date.now() - parseInt(authTime);
-  if (elapsed > SESSION_DURATION) {
-    localStorage.removeItem('thau_auth');
-    localStorage.removeItem('thau_auth_time');
-    return false;
-  }
-  
-  // Verify password
   try {
-    const decoded = atob(auth);
-    const password = decoded.split('_')[0];
-    return password === APP_PASSWORD;
-  } catch {
-    return false;
+    const res = await fetch(`${API_URL}/api/auth/validate`, {
+      headers: {
+        'Authorization': `Bearer ${sessionToken}`
+      }
+    });
+    const data = await res.json();
+    
+    if (data.success && data.valid) {
+      return { 
+        valid: true, 
+        user: data.user, 
+        sessionToken 
+      };
+    }
+  } catch (err) {
+    console.error('Auth check error:', err);
   }
+  
+  // Clear invalid session
+  localStorage.removeItem('thau_session');
+  localStorage.removeItem('thau_user');
+  return { valid: false };
 }
 
 // Mobile Bottom Navigation
@@ -106,7 +115,7 @@ function DesktopNav() {
 }
 
 // Compact Header for Mobile
-function Header({ onLogout }) {
+function Header({ onLogout, user }) {
   const today = getTodayString()
   const dayOfWeek = getDayOfWeek(today)
   const dayLabels = {
@@ -146,8 +155,23 @@ function Header({ onLogout }) {
             </div>
           </div>
           
-          {/* Date info + Logout */}
+          {/* Date info + User + Logout */}
           <div className="flex items-center gap-2">
+            {/* User info */}
+            {user && (
+              <div className="hidden sm:flex items-center gap-2 bg-white/15 backdrop-blur rounded-lg px-3 py-1.5">
+                <span className="text-sm">👤 {user.username}</span>
+                {user.role === 'admin' && (
+                  <Link
+                    to="/admin"
+                    className="text-yellow-300 hover:text-yellow-200 text-sm"
+                    title="Admin Panel"
+                  >
+                    👑
+                  </Link>
+                )}
+              </div>
+            )}
             <div className="bg-white/15 backdrop-blur rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-right">
               <div className="text-xs sm:text-sm font-medium">
                 <span className="sm:hidden">{dayLabels[dayOfWeek]}</span>
@@ -187,23 +211,54 @@ function Header({ onLogout }) {
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState(null);
+  const [sessionToken, setSessionToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   useEffect(() => {
     // Check auth on mount
-    setIsAuthenticated(checkAuth());
-    setLoading(false);
+    checkAuth().then(result => {
+      if (result.valid) {
+        setIsAuthenticated(true);
+        setUser(result.user);
+        setSessionToken(result.sessionToken);
+      }
+      setLoading(false);
+    });
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('thau_auth');
-    localStorage.removeItem('thau_auth_time');
+  const handleLogin = (userData, token) => {
+    setUser(userData);
+    setSessionToken(token);
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = async () => {
+    try {
+      if (sessionToken) {
+        await fetch(`${API_URL}/api/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${sessionToken}`
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+    
+    localStorage.removeItem('thau_session');
+    localStorage.removeItem('thau_user');
     setIsAuthenticated(false);
+    setUser(null);
+    setSessionToken(null);
+    setShowAdmin(false);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center">
         <div className="text-white text-xl">⏳ Đang tải...</div>
       </div>
     );
@@ -211,13 +266,13 @@ function App() {
 
   // Show login page if not authenticated
   if (!isAuthenticated) {
-    return <LoginPage onLogin={setIsAuthenticated} />;
+    return <LoginPage onLogin={handleLogin} />;
   }
 
   return (
     <Router>
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col">
-        <Header onLogout={handleLogout} />
+        <Header onLogout={handleLogout} user={user} />
         <DesktopNav />
 
         {/* Main content with bottom padding for mobile nav */}
@@ -228,6 +283,9 @@ function App() {
             <Route path="/ketqua" element={<KetQuaPage />} />
             <Route path="/thongke" element={<ThongKePage />} />
             <Route path="/cong-thuc" element={<CongThucPage />} />
+            {user?.role === 'admin' && (
+              <Route path="/admin" element={<AdminPanel sessionToken={sessionToken} onLogout={handleLogout} />} />
+            )}
           </Routes>
         </main>
 

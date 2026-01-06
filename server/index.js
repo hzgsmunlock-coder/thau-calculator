@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { initDatabase } from './db/database.js';
 import billRoutes from './routes/bill.js';
 import ketquaRoutes from './routes/ketqua.js';
+import authRoutes from './routes/auth.js';
 
 // Load environment variables
 dotenv.config();
@@ -31,6 +32,7 @@ app.use(express.json());
 initDatabase();
 
 // API Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/bill', billRoutes);
 app.use('/api/ketqua', ketquaRoutes);
 
