@@ -1,0 +1,18 @@
+# Render.com deployment configuration
+services:
+  # Backend API Server
+  - type: web
+    name: thau-calculator-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+    healthCheckPath: /api/health
