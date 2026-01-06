@@ -65,6 +65,14 @@ app.listen(PORT, () => {
 ║  🔧 Environment: ${process.env.NODE_ENV || 'development'}              ║
 ╚══════════════════════════════════════════════════╝
   `);
+  
+  // Start Telegram Bot in production
+  if (process.env.NODE_ENV === 'production' && process.env.TELEGRAM_BOT_TOKEN) {
+    console.log('🤖 Starting Telegram Bot...');
+    import('../bot/index.js')
+      .then(() => console.log('✅ Telegram Bot started!'))
+      .catch(err => console.error('❌ Bot error:', err.message));
+  }
 });
 
 export default app;
