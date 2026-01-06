@@ -6,7 +6,10 @@
 
 import axios from 'axios';
 
-const API_BASE = '/api';
+// Auto-detect API URL: local dev vs production
+const API_BASE = import.meta.env.PROD 
+  ? 'https://ok-production-01c9.up.railway.app/api'  // Railway backend
+  : '/api';  // Local dev với proxy
 
 const api = axios.create({
   baseURL: API_BASE,
