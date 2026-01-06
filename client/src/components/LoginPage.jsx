@@ -5,8 +5,7 @@
  */
 
 import { useState } from 'react';
-
-const APP_PASSWORD = 'thau2024';  // Mật khẩu - sync với App.jsx
+import { APP_PASSWORD } from '../config';
 
 function LoginPage({ onLogin }) {
   const [password, setPassword] = useState('');

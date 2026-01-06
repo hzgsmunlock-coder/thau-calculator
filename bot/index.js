@@ -26,12 +26,12 @@ import {
   formatMoney
 } from '../server/lib/calculator.js';
 import { billsDb, billLinesDb, ketQuaDb, initDatabase } from '../server/db/database.js';
+import { BOT_PASSWORD, TELEGRAM_BOT_TOKEN as CONFIG_TOKEN, GEMINI_API_KEY as CONFIG_GEMINI } from '../server/config.js';
 
 dotenv.config();
 
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const BOT_PASSWORD = process.env.BOT_PASSWORD || 'thau2024';  // Mật khẩu bot
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN || CONFIG_TOKEN;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || CONFIG_GEMINI;
 
 if (!TOKEN) {
   console.error('❌ Thiếu TELEGRAM_BOT_TOKEN trong file .env');

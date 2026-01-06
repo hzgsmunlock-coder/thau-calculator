@@ -7,10 +7,7 @@ import CongThucPage from './components/CongThucPage'
 import TinhTienKhachPage from './components/TinhTienKhachPage'
 import LoginPage from './components/LoginPage'
 import { getTodayString, getDayOfWeek, LICH_XO_SO } from './utils/constants'
-
-// Auth check - session valid for 24 hours
-const APP_PASSWORD = 'thau2024';  // Mật khẩu mặc định - thay đổi trong .env
-const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+import { APP_PASSWORD, SESSION_DURATION } from './config'
 
 function checkAuth() {
   const auth = localStorage.getItem('thau_auth');
