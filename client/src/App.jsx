@@ -1,11 +1,40 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
 import BillCalculator from './components/BillCalculator'
 import KetQuaPage from './components/KetQuaPage'
 import ThongKePage from './components/ThongKePage'
 import CongThucPage from './components/CongThucPage'
 import TinhTienKhachPage from './components/TinhTienKhachPage'
+import LoginPage from './components/LoginPage'
 import { getTodayString, getDayOfWeek, LICH_XO_SO } from './utils/constants'
+
+// Auth check - session valid for 24 hours
+const APP_PASSWORD = 'thau2024';  // Mật khẩu mặc định - thay đổi trong .env
+const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+function checkAuth() {
+  const auth = localStorage.getItem('thau_auth');
+  const authTime = localStorage.getItem('thau_auth_time');
+  
+  if (!auth || !authTime) return false;
+  
+  // Check session expiry
+  const elapsed = Date.now() - parseInt(authTime);
+  if (elapsed > SESSION_DURATION) {
+    localStorage.removeItem('thau_auth');
+    localStorage.removeItem('thau_auth_time');
+    return false;
+  }
+  
+  // Verify password
+  try {
+    const decoded = atob(auth);
+    const password = decoded.split('_')[0];
+    return password === APP_PASSWORD;
+  } catch {
+    return false;
+  }
+}
 
 // Mobile Bottom Navigation
 function MobileBottomNav() {
@@ -80,7 +109,7 @@ function DesktopNav() {
 }
 
 // Compact Header for Mobile
-function Header() {
+function Header({ onLogout }) {
   const today = getTodayString()
   const dayOfWeek = getDayOfWeek(today)
   const dayLabels = {
@@ -120,15 +149,26 @@ function Header() {
             </div>
           </div>
           
-          {/* Date info - Compact on mobile */}
-          <div className="bg-white/15 backdrop-blur rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-right">
-            <div className="text-xs sm:text-sm font-medium">
-              <span className="sm:hidden">{dayLabels[dayOfWeek]}</span>
-              <span className="hidden sm:inline">📅 {dayLabelsFull[dayOfWeek]}</span>
+          {/* Date info + Logout */}
+          <div className="flex items-center gap-2">
+            <div className="bg-white/15 backdrop-blur rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-right">
+              <div className="text-xs sm:text-sm font-medium">
+                <span className="sm:hidden">{dayLabels[dayOfWeek]}</span>
+                <span className="hidden sm:inline">📅 {dayLabelsFull[dayOfWeek]}</span>
+              </div>
+              <div className="text-[10px] sm:text-xs text-white/80">
+                {new Date(today).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+              </div>
             </div>
-            <div className="text-[10px] sm:text-xs text-white/80">
-              {new Date(today).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
-            </div>
+            
+            {/* Logout button */}
+            <button
+              onClick={onLogout}
+              className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-all"
+              title="Đăng xuất"
+            >
+              🚪
+            </button>
           </div>
         </div>
 
@@ -149,10 +189,38 @@ function Header() {
 }
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Check auth on mount
+    setIsAuthenticated(checkAuth());
+    setLoading(false);
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('thau_auth');
+    localStorage.removeItem('thau_auth_time');
+    setIsAuthenticated(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center">
+        <div className="text-white text-xl">⏳ Đang tải...</div>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!isAuthenticated) {
+    return <LoginPage onLogin={setIsAuthenticated} />;
+  }
+
   return (
     <Router>
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col">
-        <Header />
+        <Header onLogout={handleLogout} />
         <DesktopNav />
 
         {/* Main content with bottom padding for mobile nav */}

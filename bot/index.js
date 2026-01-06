@@ -5,6 +5,7 @@
  * 
  * Các lệnh:
  * /start - Bắt đầu
+ * /login - Đăng nhập
  * /bill - Gửi bill mới
  * /ketqua - Nhập kết quả xổ số
  * /thongke - Xem thống kê ngày hôm nay
@@ -30,6 +31,7 @@ dotenv.config();
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const BOT_PASSWORD = process.env.BOT_PASSWORD || 'thau2024';  // Mật khẩu bot
 
 if (!TOKEN) {
   console.error('❌ Thiếu TELEGRAM_BOT_TOKEN trong file .env');
@@ -56,10 +58,95 @@ initDatabase();
 // Khởi tạo bot
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// Lưu trạng thái user
+// Lưu trạng thái user và authenticated users
 const userStates = new Map();
+const authenticatedUsers = new Set();  // Lưu user đã đăng nhập
 
 console.log('🤖 Telegram Bot đang chạy...');
+console.log('🔐 Bot password:', BOT_PASSWORD);
+
+// ================================================================
+// AUTHENTICATION
+// ================================================================
+
+/**
+ * Check if user is authenticated
+ */
+function isAuthenticated(userId) {
+  return authenticatedUsers.has(userId.toString());
+}
+
+/**
+ * Require authentication middleware
+ */
+function requireAuth(chatId, userId, callback) {
+  if (!isAuthenticated(userId)) {
+    bot.sendMessage(chatId, `
+🔐 *YÊU CẦU ĐĂNG NHẬP*
+━━━━━━━━━━━━━━━━━━━━━━
+Bạn cần đăng nhập để sử dụng bot.
+
+Gửi lệnh: /login <mật khẩu>
+Ví dụ: \`/login abc123\`
+    `, { parse_mode: 'Markdown' });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * /login - Đăng nhập
+ */
+bot.onText(/\/login(?:\s+(.+))?/, (msg, match) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id.toString();
+  const password = match[1]?.trim();
+  
+  if (!password) {
+    bot.sendMessage(chatId, `
+🔐 *ĐĂNG NHẬP*
+━━━━━━━━━━━━━━━━━━━━━━
+Gửi lệnh: /login <mật khẩu>
+Ví dụ: \`/login abc123\`
+    `, { parse_mode: 'Markdown' });
+    return;
+  }
+  
+  if (password === BOT_PASSWORD) {
+    authenticatedUsers.add(userId);
+    bot.sendMessage(chatId, `
+✅ *ĐĂNG NHẬP THÀNH CÔNG!*
+━━━━━━━━━━━━━━━━━━━━━━
+Chào mừng bạn! Bây giờ bạn có thể sử dụng bot.
+
+📝 Gửi /bill để nhập bill mới
+📖 Gửi /help để xem hướng dẫn
+    `, { parse_mode: 'Markdown' });
+  } else {
+    bot.sendMessage(chatId, `
+❌ *SAI MẬT KHẨU!*
+━━━━━━━━━━━━━━━━━━━━━━
+Vui lòng thử lại hoặc liên hệ admin.
+    `, { parse_mode: 'Markdown' });
+  }
+});
+
+/**
+ * /logout - Đăng xuất
+ */
+bot.onText(/\/logout/, (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id.toString();
+  
+  authenticatedUsers.delete(userId);
+  userStates.delete(userId);
+  
+  bot.sendMessage(chatId, `
+👋 *ĐÃ ĐĂNG XUẤT*
+━━━━━━━━━━━━━━━━━━━━━━
+Hẹn gặp lại! Gửi /login để đăng nhập lại.
+  `, { parse_mode: 'Markdown' });
+});
 
 // ================================================================
 // COMMAND HANDLERS
@@ -70,12 +157,17 @@ console.log('🤖 Telegram Bot đang chạy...');
  */
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
+  const userId = msg.from.id.toString();
   const userName = msg.from.first_name || 'Thầu';
+  
+  const isLoggedIn = isAuthenticated(userId);
   
   bot.sendMessage(chatId, `
 🎰 *THẦU CALCULATOR BOT*
 ━━━━━━━━━━━━━━━━━━━━━━
 Xin chào *${userName}*!
+
+${isLoggedIn ? '✅ Bạn đã đăng nhập' : '🔐 Bạn chưa đăng nhập'}
 
 Bot hỗ trợ tính toán cho thầu lô đề:
 • Nhận bill từ khách
@@ -84,7 +176,7 @@ Bot hỗ trợ tính toán cho thầu lô đề:
 • Báo cáo lời/lỗ
 
 📝 *Các lệnh:*
-/bill - Gửi bill mới
+${isLoggedIn ? '' : '/login - 🔐 Đăng nhập\n'}${isLoggedIn ? '/logout - 🚪 Đăng xuất\n' : ''}/bill - Gửi bill mới
 /ketqua - Nhập kết quả xổ số
 /thongke - Xem thống kê hôm nay
 /help - Hướng dẫn chi tiết
@@ -98,6 +190,7 @@ Bot hỗ trợ tính toán cho thầu lô đề:
  */
 bot.onText(/\/help/, (msg) => {
   const chatId = msg.chat.id;
+  const userId = msg.from.id;
   
   bot.sendMessage(chatId, `
 📖 *HƯỚNG DẪN SỬ DỤNG*
@@ -147,6 +240,9 @@ bot.onText(/\/bill/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
   
+  // Check auth
+  if (!requireAuth(chatId, userId)) return;
+  
   userStates.set(userId, { state: 'waiting_bill' });
   
   bot.sendMessage(chatId, `
@@ -175,6 +271,9 @@ bot.onText(/\/ketqua/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
   
+  // Check auth
+  if (!requireAuth(chatId, userId)) return;
+  
   userStates.set(userId, { state: 'waiting_ketqua' });
   
   bot.sendMessage(chatId, `
@@ -198,6 +297,11 @@ Hoặc gửi /cancel để hủy
  */
 bot.onText(/\/thongke/, async (msg) => {
   const chatId = msg.chat.id;
+  const userId = msg.from.id.toString();
+  
+  // Check auth
+  if (!requireAuth(chatId, userId)) return;
+  
   const ngay = new Date().toISOString().split('T')[0];
   
   try {
@@ -342,6 +446,9 @@ bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
   const userState = userStates.get(userId);
+  
+  // Check auth
+  if (!requireAuth(chatId, userId)) return;
   
   // Lấy ảnh có độ phân giải cao nhất
   const photos = msg.photo;
@@ -539,7 +646,15 @@ bot.on('message', async (msg) => {
   
   if (!text) return;
   
+  // Check auth (trừ khi đang đợi đăng nhập)
   const userState = userStates.get(userId);
+  if (!userState && !isAuthenticated(userId)) {
+    bot.sendMessage(chatId, `
+🔐 Vui lòng đăng nhập trước: /login <mật khẩu>
+    `, { parse_mode: 'Markdown' });
+    return;
+  }
+  
   if (!userState) return;
   
   // Xử lý theo state
