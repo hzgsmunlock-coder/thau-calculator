@@ -1,18 +1,18 @@
 # Render.com deployment configuration
 services:
-  # Backend API Server
+  # Backend API Server + Telegram Bot
   - type: web
     name: thau-calculator-api
     runtime: node
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: node server/index.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: 3001
+        value: 10000
       - key: TELEGRAM_BOT_TOKEN
-        sync: false
+        value: 8547611521:AAElUN29plyINF2OVQg6D6cQzEkROgAMkGg
       - key: GEMINI_API_KEY
-        sync: false
+        value: AIzaSyC2-0jTJuxHrdLnbDkWpNrkJeVqbUCM34I
     healthCheckPath: /api/health
