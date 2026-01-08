@@ -451,21 +451,30 @@ export function formatMoney(amount) {
  * @returns {Object[]} Mảng các dòng bill đã parse
  */
 export function parseBillText(text) {
-  const lines = text.trim().split('\n');
-  const bill = [];
+  // Tách theo dấu phẩy đôi ,, hoặc xuống dòng
+  const lines = text
+    .replace(/,,+/g, '|||')  // Đánh dấu phân cách chính
+    .replace(/,\s*(\d{2})\s*-\s*(\d{2})/g, '||| $1 - $2')  // Tách: ", 08 -75"
+    .replace(/,\s*(tn|tây ninh|ag|an giang)/gi, '||| $1')  // Tách khi có đài mới
+    .split('|||')
+    .map(l => l.trim())
+    .filter(l => l.length > 0);
   
-  // Pattern nhận diện các dòng bill
-  // Ví dụ: "23 45 67 bl2 10d 1dai"
-  // Hoặc: "23,45,67 bao lo 2 10 diem mot dai"
+  const bill = [];
+  let currentDai = null;
   
   lines.forEach(line => {
     const trimmed = line.trim().toLowerCase();
     if (!trimmed) return;
     
-    // Phân tích dòng
-    const parsed = parseLineBill(trimmed);
-    if (parsed) {
-      bill.push(parsed);
+    // parseLineBill giờ trả về mảng (có thể nhiều dòng từ 1 input)
+    const parsed = parseLineBill(trimmed, currentDai);
+    if (parsed && parsed.length > 0) {
+      bill.push(...parsed); // Spread array
+      // Cập nhật đài
+      if (parsed[0].dai) {
+        currentDai = parsed[0].dai;
+      }
     }
   });
   
@@ -475,69 +484,117 @@ export function parseBillText(text) {
 /**
  * Parse 1 dòng bill
  */
-function parseLineBill(line) {
+function parseLineBill(line, inheritedDai = null) {
+  const results = [];
+  
   // Chuẩn hóa input
   let normalized = line
-    .replace(/,/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   
-  // Tìm số đánh (2-3 chữ số liên tiếp)
-  const numberPattern = /\b(\d{2,3})\b/g;
-  const numbers = [];
-  let match;
-  while ((match = numberPattern.exec(normalized)) !== null) {
-    numbers.push(match[1]);
-  }
+  // Tìm tên đài
+  let dai = inheritedDai;
+  const daiPattern = /(an giang|ag|tây ninh|tn|bến tre|bt|cần thơ|ct|đồng tháp|dt|kiên giang|kg|tiền giang|tg|vĩnh long|vl|long an|la|bạc liêu|bl|cà mau|cm|sóc trăng|st|trà vinh|tv|hậu giang|hg|đà lạt|dl|đắk lắk|daklak|đắk nông|daknong|gia lai|gl|khánh hòa|kh|kon tum|kt|lâm đồng|ld|ninh thuận|nt|phú yên|py|quảng bình|qb|quảng nam|qn|quảng ngãi|qng|quảng trị|qt|bình định|bd|bình thuận|bth|đà nẵng|dn)/gi;
   
-  if (numbers.length === 0) return null;
-  
-  // Tìm số điểm
-  let diem = 1;
-  const diemMatch = normalized.match(/(\d+)\s*(d|đ|diem|điểm)/i);
-  if (diemMatch) {
-    diem = parseInt(diemMatch[1]);
-  }
-  
-  // Xác định kiểu chơi
-  let kieuChoi = KIEU_CHOI.BAO_LO_2;
-  
-  if (/đảo|dao|bd/.test(normalized)) {
-    kieuChoi = numbers[0].length === 3 ? KIEU_CHOI.BAO_DAO_3 : KIEU_CHOI.BAO_DAO_2;
-  } else if (/đá vòng|da vong|dv/.test(normalized)) {
-    kieuChoi = KIEU_CHOI.DA_VONG;
-  } else if (/đá|da\b/.test(normalized)) {
-    kieuChoi = numbers.length > 2 ? KIEU_CHOI.DA_VONG : KIEU_CHOI.DA;
-  } else if (/đầu|dau/.test(normalized)) {
-    kieuChoi = KIEU_CHOI.DAU;
-  } else if (/đuôi|duoi/.test(normalized)) {
-    kieuChoi = KIEU_CHOI.DUOI;
-  } else if (/bl3|bao lo 3|bao lô 3|3 số|3so/.test(normalized)) {
-    kieuChoi = KIEU_CHOI.BAO_LO_3;
-  } else if (/bl2|bao lo 2|bao lô 2|bl|bao lo/.test(normalized)) {
-    kieuChoi = KIEU_CHOI.BAO_LO_2;
+  const daiMatches = normalized.match(daiPattern);
+  if (daiMatches) {
+    dai = daiMatches.join(' ');
+    normalized = normalized.replace(daiPattern, ' ').replace(/\s+/g, ' ').trim();
   }
   
   // Xác định loại đài
   let loaiDai = LOAI_DAI.MOT_DAI;
-  
-  if (/hà nội|ha noi|hn/.test(normalized)) {
-    loaiDai = LOAI_DAI.HA_NOI;
-  } else if (/2 đài|2 dai|2dai|2đài|hai đài/.test(normalized)) {
+  if (dai) {
+    const daiMatchCount = dai.match(daiPattern);
+    if (daiMatchCount && daiMatchCount.length >= 2) {
+      loaiDai = LOAI_DAI.HAI_DAI;
+    } else if (/hà nội|ha noi|hn/.test(dai)) {
+      loaiDai = LOAI_DAI.HA_NOI;
+    }
+  } else if (/2 đài|2 dai|2dai|2đài|hai đài/.test(line)) {
     loaiDai = LOAI_DAI.HAI_DAI;
-  } else if (/chung|bc/.test(normalized)) {
-    loaiDai = LOAI_DAI.BAO_CHUNG;
-  } else if (/1 đài|1 dai|1dai|1đài|một đài|mot dai/.test(normalized)) {
-    loaiDai = LOAI_DAI.MOT_DAI;
+  } else if (/hà nội|ha noi|hn/.test(line)) {
+    loaiDai = LOAI_DAI.HA_NOI;
   }
   
-  return {
+  // Xử lý "SỐ dd ĐIỂM bao ĐIỂM" 
+  const ddBaoMatch = normalized.match(/(\d{2}(?:\s*,\s*\d{2})*)\s+(dd|đầu đuôi)\s+(\d+)\s+bao\s+(\d+)/i);
+  if (ddBaoMatch) {
+    // Extract các số từ phần đầu (vd: "31" hoặc "09, 90")
+    const numString = ddBaoMatch[1].replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+    const numbers = numString.match(/\d{2}/g) || [];
+    const diemDD = parseInt(ddBaoMatch[3]); // điểm đầu đuôi
+    const diemBao = parseInt(ddBaoMatch[4]); // điểm bao
+    
+    // dd = xiên 1 đài (hệ số 1.6)
+    
+    // Tạo 2 dòng cho mỗi số
+    numbers.forEach(num => {
+      // 1. Đầu đuôi
+      results.push({
+        numbers: [num],
+        diem: diemDD,
+        kieuChoi: KIEU_CHOI.DAU_DUOI,
+        loaiDai: LOAI_DAI.MOT_DAI, // Không ảnh hưởng, hệ số fix = 1.6
+        dai,
+        raw: `${line} [dd]`
+      });
+      
+      // 2. Bao lô
+      results.push({
+        numbers: [num],
+        diem: diemBao,
+        kieuChoi: KIEU_CHOI.BAO_LO_2,
+        loaiDai: LOAI_DAI.MOT_DAI,
+        dai,
+        raw: `${line} [bao]`
+      });
+    });
+    
+    return results;
+  }
+  
+  // Xử lý "đá X"
+  const daMatch = normalized.match(/đá\s+(\d+)/i);
+  if (daMatch) {
+    // Tìm số TRƯỚC "đá"
+    const beforeDa = normalized.substring(0, daMatch.index);
+    const numberString = beforeDa.replace(/,/g, ' ').replace(/-/g, ' ');
+    const numbers = numberString.match(/\d{2}/g) || [];
+    
+    if (numbers.length === 0) return results;
+    
+    const diem = parseInt(daMatch[1]);
+    const kieuChoi = numbers.length > 2 ? KIEU_CHOI.DA_VONG : KIEU_CHOI.DA;
+    
+    results.push({
+      numbers,
+      diem,
+      kieuChoi,
+      loaiDai,
+      dai,
+      raw: line
+    });
+    
+    return results;
+  }
+  
+  // Mặc định: bao lô - tìm tất cả số
+  const numberString = normalized.replace(/,/g, ' ').replace(/-/g, ' ');
+  const numbers = numberString.match(/\d{2}/g) || [];
+  
+  if (numbers.length === 0) return results;
+  
+  results.push({
     numbers,
-    diem,
-    kieuChoi,
+    diem: 1,
+    kieuChoi: KIEU_CHOI.BAO_LO_2,
     loaiDai,
+    dai,
     raw: line
-  };
+  });
+  
+  return results;
 }
 
 export default {

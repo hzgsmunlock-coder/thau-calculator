@@ -140,6 +140,7 @@ export const KIEU_CHOI = {
   BAO_DAO_3: 'BAO_DAO_3',
   DAU: 'DAU',
   DUOI: 'DUOI',
+  DAU_DUOI: 'DAU_DUOI', // Đầu đuôi - kiểu chơi riêng
   DA: 'DA',
   DA_XIEN: 'DA_XIEN',
   DA_VONG: 'DA_VONG',
@@ -275,6 +276,10 @@ export function layHeSoThu(kieuChoi, loaiDai) {
     
     case KIEU_CHOI.DUOI:
       return HE_SO_THU_DUOI[loaiDai] || HE_SO_THU_DUOI.MOT_DAI;
+    
+    case KIEU_CHOI.DAU_DUOI:
+      // Đầu đuôi = xiên 1 đài = hệ số 1.6
+      return HE_SO_THU_XIEN.MOT_DAI;
     
     case KIEU_CHOI.DA:
     case KIEU_CHOI.DA_VONG:
